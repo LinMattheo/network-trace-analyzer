@@ -284,6 +284,42 @@ async def health_check():
 async def chrome_devtools():
     return {"status": "not_available"}
 
+@app.get("/api/analyze")
+async def analyze_trace():
+    # 1. 指定文件路径（之后我们可以改成从 S3 下载）
+    file_path = "storage/VW33635_0799_20240830_140300h_Trace1Min.pcapng"
+    
+    # 2. 开始分析 (这里建议先分析前 10000 个包做测试，否则会很久)
+    cap = pyshark.FileCapture(file_path)
+    ip_counter = Counter()
+    proto_counter = Counter()
+    
+    count = 0
+    for pkt in cap:
+        if count > 10000: break # 先测一万个包
+        try:
+            if hasattr(pkt, 'ip'):
+                ip_counter[pkt.ip.src] += 1
+                proto_counter[pkt.transport_layer] += 1
+            elif hasattr(pkt, 'ipv6'):
+                ip_counter[pkt.ipv6.src] += 1
+                proto_counter[pkt.transport_layer] += 1
+            count += 1
+        except AttributeError:
+            continue
+            
+    cap.close()
+
+    # 3. 构造 Dataiku 风格的结构化数据
+    return {
+        "status": "success",
+        "data": {
+            "total_analyzed": count,
+            "ip_distribution": dict(ip_counter.most_common(5)),
+            "protocol_distribution": dict(proto_counter)
+        }
+    }
+
 # 挂载静态页面（假设 index.html 在 frontend_static 目录下）
 # 注意：这个必须在最后，因为它会捕获所有未匹配的路由
 app.mount("/", StaticFiles(directory="frontend_static", html=True), name="static")
