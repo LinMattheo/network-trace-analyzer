@@ -19,15 +19,28 @@ jobs:
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
             cd /home/ubuntu/code
-            # 强制同步 GitHub 最新代码到 EC2
+            
+            # 1. 强制同步代码
             git fetch --all
             git reset --hard origin/main
             
-            # 激活环境并更新
-            cd /home/ubuntu/code/backend
-            source venv/bin/activate
-            pip install -r requirements.txt
+            # 2. 核心补丁：确保 EC2 安装了创建虚拟环境所需的系统包
+            # 我们用 sudo 运行一次，保证环境可用
+            sudo apt-get update
+            sudo apt-get install -y python3-venv python3-pip
             
-            # 重启 FastAPI 服务
+            # 3. 创建虚拟环境 (如果不存在)
+            if [ ! -d "venv" ]; then
+                python3 -m venv venv
+            fi
+            
+            # 4. 重点：直接使用虚拟环境路径下的 pip，完全绕过系统 pip
+            ./venv/bin/pip install --upgrade pip
+            ./venv/bin/pip install -r requirements.txt
+            
+            # 5. 重启服务
             pkill -f uvicorn || true
-            nohup venv/bin/python3 -m uvicorn app:app --host 0.0.0.0 --port 8000 > server.log 2>&1 &
+            # 同样直接指定虚拟环境的 Python 运行
+            nohup ./venv/bin/python3 -m uvicorn app:app --host 0.0.0.0 --port 8000 > server.log 2>&1 &
+            
+            echo "Deploy success!"
