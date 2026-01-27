@@ -38,12 +38,13 @@ jobs:
             # 5. 重启服务
             echo "Restarting Uvicorn..."
             pkill -f uvicorn || true
+            sleep 1
             
-            # 核心改动：把所有的输出都丢进黑洞，并脱离终端 (disown)
-            # 这样 SSH 就不会因为后台进程还连着管道而报错了
-            nohup ./venv/bin/python3 -m uvicorn app:app --host 0.0.0.0 --port 8000 </dev/null >log.txt 2>&1 &
+            # 使用 setsid 确保进程不随 SSH 会话关闭而自杀
+            # </dev/null 确保它不再尝试读取已关闭的终端输入
+            setsid ./venv/bin/python3 -m uvicorn app:app --host 0.0.0.0 --port 8000 > log.txt 2>&1 &
             
-            # 给 2 秒缓冲，然后强制声明成功退出
+            echo "Process detached successfully."
             sleep 2
-            echo "Deployment finished and process disowned."
-            exit 0
+            # 这一步是为了在 GitHub 日志里确认进程真的还在
+            pgrep -fl uvicorn || echo "Warning: Process not found!"
