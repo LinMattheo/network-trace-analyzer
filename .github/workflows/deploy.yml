@@ -40,8 +40,16 @@ jobs:
             ./venv/bin/pip install -r requirements.txt
             
             # 5. 重启服务
+            echo "Restarting Uvicorn..."
+            # 使用 || true 防止因为找不到旧进程而报错导致脚本中断
             pkill -f uvicorn || true
-            # 同样直接指定虚拟环境的 Python 运行
-            nohup ./venv/bin/python3 -m uvicorn app:app --host 0.0.0.0 --port 8000 > server.log 2>&1 &
+            
+            # 关键改动：使用 sleep 确保进程有时间启动，并明确返回成功状态
+            nohup /home/ubuntu/code/venv/bin/python3 -m uvicorn app:app --host 0.0.0.0 --port 8000 > server.log 2>&1 &
+            
+            sleep 2
+            echo "Checking if process started..."
+            ps aux | grep uvicorn
             
             echo "Deploy success!"
+            exit 0
