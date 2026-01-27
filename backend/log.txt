@@ -1,0 +1,17 @@
+nohup: ignoring input
+INFO:     Started server process [27043]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+INFO:     185.247.137.205:59223 - "GET / HTTP/1.1" 200 OK
+INFO:     79.235.220.241:50503 - "POST /upload HTTP/1.1" 200 OK
+DEBUG: 开始深度分析 storage/VW33635_0799_20240830_140300h_Trace1Min.pcapng...
+INFO:     198.235.24.174:63738 - "GET / HTTP/1.1" 200 OK
+--- 分析报告 ---
+总数据包: 1287480
+IP: fd53:7cb8:383:3::73 -> 出现 312695 次
+IP: fd53:7cb8:383:3::6f -> 出现 273778 次
+IP: fd53:7cb8:383:2::4f -> 出现 169185 次
+IP: fd53:7cb8:383:2::10 -> 出现 158495 次
+IP: fd53:7cb8:383:2::39 -> 出现 120796 次
+WARNING:  Invalid HTTP request received.

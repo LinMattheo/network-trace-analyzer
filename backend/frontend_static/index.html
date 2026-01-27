@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Trace Analyzer</title>
+    <style>
+        .upload-card { border: 1px solid #ccc; padding: 20px; border-radius: 8px; max-width: 600px; margin: auto; }
+        #progressContainer { width: 100%; background: #eee; display: none; margin: 10px 0; }
+        #progressBar { width: 0%; height: 20px; background: #4caf50; text-align: center; color: white; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
+        th { background-color: #f4f4f4; }
+
+        /* 让表格像科技感十足的 Dashboard */
+        #report-section {
+            background: #f8f9fa;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            padding: 25px;
+        }
+        table {
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        th {
+            background-color: #343a40 !important;
+            color: #00ffcc !important; /* 极客绿 */
+        }
+        tr:hover {
+            background-color: #e9ecef !important;
+            transition: 0.3s;
+        }
+    </style>
+</head>
+<body>
+    <div class="upload-card">
+        <h2>🚀 Trace File Analyzer</h2>
+        <input type="file" id="fileInput" accept=".pcap,.pcapng">
+        <button onclick="uploadFile()">Upload and Analyze</button>
+        <div id="progressContainer"><div id="progressBar">0%</div></div>
+        <p id="statusText">Waiting for operation...</p>
+        <!-- Debug information display area -->
+        <div id="debugInfo" style="margin-top: 20px; padding: 10px; background: #f5f5f5; border-radius: 4px; font-family: monospace; font-size: 12px; max-height: 200px; overflow-y: auto; display: none;">
+            <strong>Debug Info:</strong>
+            <div id="debugLog"></div>
+        </div>
+    </div>
+
+    <div id="report-section" style="display:none; padding: 20px;">
+        <hr>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+            <h2 style="margin: 0;">📊 Analysis Report</h2>
+            <a id="downloadLink" href="#" onclick="downloadReport(event)" style="padding: 8px 16px; background-color: #4caf50; color: white; text-decoration: none; border-radius: 4px; font-weight: bold;">
+                📥 Download Report (CSV)
+            </a>
+        </div>
+        <p>Total Packets: <span id="total-pkts" style="font-weight:bold; color:blue;"></span></p>
+        <table>
+            <thead>
+                <tr>
+                    <th>Source IP</th>
+                    <th>Destination IP</th>
+                    <th>Count</th>
+                    <th>Percentage</th>
+                </tr>
+            </thead>
+            <tbody id="table-body"></tbody>
+        </table>
+    </div>
+
+    <script>
+        const API_BASE = window.location.origin;
+        
+        // 保存当前报告数据，供下载使用
+        let currentReportData = null;
+        
+        // Download report function
+        function downloadReport(event) {
+            event.preventDefault();
+            
+            if (!currentReportData || !currentReportData.table_data) {
+                alert("No report data available for download");
+                return;
+            }
+            
+            // Generate CSV content
+            const csvContent = generateCSV(currentReportData);
+            
+            // Create Blob object
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            
+            // Create download link
+            const link = document.createElement('a');
+            const url = URL.createObjectURL(blob);
+            link.setAttribute('href', url);
+            
+            // Generate filename (using current timestamp)
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+            const filename = `trace_analysis_report_${timestamp}.csv`;
+            link.setAttribute('download', filename);
+            
+            // Trigger download
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            
+            debugLog(`Report downloaded: ${filename}`);
+        }
+        
+        // Generate CSV content
+        function generateCSV(reportData) {
+            // CSV header
+            let csv = 'Source IP,Destination IP,Count,Percentage\n';
+            
+            // Add data rows
+            reportData.table_data.forEach(row => {
+                // Handle special characters in CSV (comma, quotes, newlines)
+                const source = escapeCSVField(row.source || '');
+                const destination = escapeCSVField(row.destination || '');
+                const count = row.count || 0;
+                const percentage = escapeCSVField(row.percentage || '0%');
+                
+                csv += `${source},${destination},${count},${percentage}\n`;
+            });
+            
+            // Add summary information
+            csv += `\nTotal Packets,${reportData.total || 0}\n`;
+            csv += `Generated Time,${new Date().toLocaleString('en-US')}\n`;
+            
+            return csv;
+        }
+        
+        // 转义CSV字段中的特殊字符
+        function escapeCSVField(field) {
+            if (field === null || field === undefined) {
+                return '';
+            }
+            const str = String(field);
+            // 如果包含逗号、引号或换行符，需要用引号包裹，并转义引号
+            if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+                return '"' + str.replace(/"/g, '""') + '"';
+            }
+            return str;
+        }
+        
+        // 调试日志函数：同时在控制台和页面上显示
+        function debugLog(message, type = 'log') {
+            const timestamp = new Date().toLocaleTimeString();
+            const logMessage = `[${timestamp}] ${message}`;
+            
+            // 输出到控制台
+            if (type === 'error') {
+                console.error(logMessage);
+            } else {
+                console.log(logMessage);
+            }
+            
+            // 显示在页面上
+            const debugInfo = document.getElementById('debugInfo');
+            const debugLog = document.getElementById('debugLog');
+            if (debugInfo && debugLog) {
+                debugInfo.style.display = 'block';
+                const logEntry = document.createElement('div');
+                logEntry.style.color = type === 'error' ? 'red' : 'black';
+                logEntry.textContent = logMessage;
+                debugLog.appendChild(logEntry);
+                // 自动滚动到底部
+                debugInfo.scrollTop = debugInfo.scrollHeight;
+            }
+        } 
+    
+        async function uploadFile() {
+            debugLog("=== Starting file upload ===");
+            
+            // Clear previous debug logs
+            const debugLogDiv = document.getElementById('debugLog');
+            if (debugLogDiv) {
+                debugLogDiv.innerHTML = '';
+            }
+            
+            const fileInput = document.getElementById('fileInput');
+            const file = fileInput.files[0];
+            if (!file) { 
+                alert("Please select a file"); 
+                debugLog("Error: No file selected", 'error');
+                return; 
+            }
+            
+            debugLog(`Selected file: ${file.name}, size: ${(file.size / 1024 / 1024).toFixed(2)} MB`);
+    
+            const formData = new FormData();
+            formData.append("file", file);
+    
+            const xhr = new XMLHttpRequest();
+            const progressBar = document.getElementById('progressBar');
+            const progressContainer = document.getElementById('progressContainer');
+            const statusText = document.getElementById('statusText'); // 统一使用这个变量名
+    
+            progressContainer.style.display = 'block';
+    
+            xhr.upload.onprogress = (e) => {
+                if (e.lengthComputable) {
+                    const percent = Math.round((e.loaded / e.total) * 100);
+                    progressBar.style.width = percent + "%";
+                    progressBar.innerText = percent + "%";
+                }
+            };
+    
+            xhr.onload = () => {
+                debugLog(`Upload response status: ${xhr.status}`);
+                debugLog(`Upload response content: ${xhr.responseText}`);
+                
+                if (xhr.status === 200) {
+                    try {
+                        const res = JSON.parse(xhr.responseText);
+                        debugLog("✅ Upload successful, server response: " + JSON.stringify(res));
+        
+                        // Check if backend returned task_id
+                        const taskId = res.task_id; 
+                        debugLog(`Extracted taskId: ${taskId}`);
+                        
+                        if (!taskId) {
+                            const errorMsg = "❌ Error: No task_id in backend response. Response: " + JSON.stringify(res);
+                            statusText.innerText = errorMsg;
+                            debugLog("Response format error, missing task_id, full response: " + JSON.stringify(res), 'error');
+                            return;
+                        }
+        
+                        const statusDisplay = document.getElementById('statusText');
+                        statusDisplay.innerText = "✅ Upload successful! ID: " + taskId;
+                        
+                        // Start polling
+                        debugLog(`Preparing to call pollResults, taskId = ${taskId}`);
+                        pollResults(taskId);
+                        debugLog("pollResults called");
+                    } catch (e) {
+                        debugLog("Failed to parse response JSON: " + e.message, 'error');
+                        statusText.innerText = "❌ Failed to parse server response: " + e.message;
+                    }
+                } else {
+                    const errorMsg = `❌ Upload failed, status code: ${xhr.status}, response: ${xhr.responseText}`;
+                    statusText.innerText = errorMsg;
+                    debugLog(`Upload failed, status code: ${xhr.status}, response: ${xhr.responseText}`, 'error');
+                }
+            };
+            
+            xhr.onerror = () => {
+                debugLog("Network error occurred during upload", 'error');
+                statusText.innerText = "❌ Network error: Unable to connect to server";
+            };
+            
+            xhr.onabort = () => {
+                debugLog("Upload request cancelled", 'error');
+                statusText.innerText = "⚠️ Upload cancelled";
+            };
+            
+            debugLog(`Requesting URL: ${API_BASE}/upload`);
+            xhr.open("POST", `${API_BASE}/upload`, true);
+            xhr.send(formData);
+        }
+    
+        function pollResults(taskId) {
+            debugLog("=== pollResults function called ===");
+            debugLog(`TaskId passed in: ${taskId}`);
+            
+            if (!taskId) {
+                debugLog("Error: taskId is empty, cannot start polling", 'error');
+                return;
+            }
+            
+            const statusText = document.getElementById('statusText');
+            debugLog(`Starting to poll task results, taskId: ${taskId}`);
+    
+            let pollCount = 0;
+            const timer = setInterval(async () => {
+                pollCount++;
+                debugLog(`Poll #${pollCount}, taskId: ${taskId}`);
+                
+                try {
+                    const url = `${API_BASE}/get_report/${taskId}`;
+                    debugLog(`Poll request URL: ${url}`);
+                    
+                    const response = await fetch(url);
+                    debugLog(`Poll response status: ${response.status}`);
+                    
+                    if (!response.ok) {
+                        debugLog(`Poll request failed, status code: ${response.status}`, 'error');
+                        statusText.innerText = `⏳ Analyzing... (Request status: ${response.status})`;
+                        return;
+                    }
+                    
+                    const result = await response.json();
+                    debugLog(`Poll status: ${result.status}, full result: ${JSON.stringify(result)}`);
+    
+                    if (result.status === "completed") {
+                        debugLog("✅ Analysis completed! Clearing timer");
+                        clearInterval(timer);
+                        statusText.innerText = "🎉 Analysis completed! Rendering table...";
+                        displayTable(result);
+                    } else if (result.status === "error") {
+                        debugLog("❌ Analysis error, clearing timer", 'error');
+                        clearInterval(timer);
+                        statusText.innerText = "❌ Error: " + (result.message || "Unknown error");
+                    } else if (result.status === "processing") {
+                        // Show progress if available
+                        if (result.progress) {
+                            statusText.innerText = "⏳ " + result.progress;
+                            if (result.total_processed) {
+                                debugLog(`Processing: ${result.total_processed.toLocaleString()} packets processed`);
+                            }
+                        } else {
+                            statusText.innerText = "⏳ Analyzing... (Processing packets)...";
+                        }
+                    } else if (result.status === "not_found") {
+                        statusText.innerText = "⏳ Waiting for task to start...";
+                    } else {
+                        statusText.innerText = `⏳ Status: ${result.status || "Unknown"}`;
+                    }
+                } catch (e) {
+                    debugLog(`Poll request failed: ${e.message}`, 'error');
+                    statusText.innerText = "⏳ Analyzing... (Request exception: " + e.message + ")";
+                }
+            }, 2000);
+            
+            debugLog("Poll timer set, executing every 2 seconds");
+        }
+    
+        function displayTable(result) {
+            console.log("4. Preparing to render data:", result.table_data);
+            
+            // Save report data for download
+            currentReportData = result;
+            
+            document.getElementById('report-section').style.display = 'block';
+            document.getElementById('total-pkts').innerText = result.total;
+            
+            const tbody = document.getElementById('table-body');
+            
+            // Ensure table_data has content
+            if (!result.table_data || result.table_data.length === 0) {
+                tbody.innerHTML = "<tr><td colspan='4'>No valid IP packets found</td></tr>";
+                // If no data, disable download link
+                const downloadLink = document.getElementById('downloadLink');
+                if (downloadLink) {
+                    downloadLink.style.opacity = '0.5';
+                    downloadLink.style.pointerEvents = 'none';
+                }
+                return;
+            }
+            
+            // Enable download link
+            const downloadLink = document.getElementById('downloadLink');
+            if (downloadLink) {
+                downloadLink.style.opacity = '1';
+                downloadLink.style.pointerEvents = 'auto';
+            }
+    
+            tbody.innerHTML = result.table_data.map(row => `
+                <tr>
+                    <td>${row.source}</td>
+                    <td>${row.destination}</td>
+                    <td>${row.count}</td>
+                    <td>${row.percentage}</td>
+                </tr>
+            `).join('');
+            
+            debugLog("Table rendered, report can be downloaded");
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Trace Analyzer</title>
+    <style>
+        .upload-card { border: 1px solid #ccc; padding: 20px; border-radius: 8px; max-width: 600px; margin: auto; }
+        #progressContainer { width: 100%; background: #eee; display: none; margin: 10px 0; }
+        #progressBar { width: 0%; height: 20px; background: #4caf50; text-align: center; color: white; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
+        th { background-color: #f4f4f4; }
+    </style>
+</head>
+<body>
+    <div class="upload-card">
+        <h2>🚀 Trace 文件上传分析</h2>
+        <input type="file" id="fileInput" accept=".pcap,.pcapng">
+        <button onclick="uploadFile()">开始上传分析</button>
+        <div id="progressContainer"><div id="progressBar">0%</div></div>
+        <p id="statusText">等待操作...</p>
+    </div>
+
+    <div id="report-section" style="display:none; padding: 20px;">
+        <hr>
+        <h2>📊 分析报告</h2>
+        <p>总数据包: <span id="total-pkts" style="font-weight:bold; color:blue;"></span></p>
+        <table>
+            <thead>
+                <tr>
+                    <th>源 IP</th>
+                    <th>目标 IP</th>
+                    <th>次数</th>
+                    <th>占比</th>
+                </tr>
+            </thead>
+            <tbody id="table-body"></tbody>
+        </table>
+    </div>
+
+    <script>
+        const API_BASE = window.location.origin; 
+    
+        async function uploadFile() {
+            const fileInput = document.getElementById('fileInput');
+            const file = fileInput.files[0];
+            if (!file) { alert("请选择文件"); return; }
+    
+            const formData = new FormData();
+            formData.append("file", file);
+    
+            const xhr = new XMLHttpRequest();
+            const progressBar = document.getElementById('progressBar');
+            const progressContainer = document.getElementById('progressContainer');
+            const statusText = document.getElementById('statusText'); // 统一使用这个变量名
+    
+            progressContainer.style.display = 'block';
+    
+            xhr.upload.onprogress = (e) => {
+                if (e.lengthComputable) {
+                    const percent = Math.round((e.loaded / e.total) * 100);
+                    progressBar.style.width = percent + "%";
+                    progressBar.innerText = percent + "%";
+                }
+            };
+    
+            xhr.onload = () => {
+                if (xhr.status === 200) {
+                    const res = JSON.parse(xhr.responseText);
+                    console.log("1. 上传成功，服务器响应:", res);
+    
+                    // 重点检查后端返回的是不是 task_id
+                    const taskId = res.task_id; 
+                    
+                    if (!taskId) {
+                        statusText.innerText = "❌ 错误：后端响应中没有 task_id";
+                        console.error("响应格式错误，缺少 task_id");
+                        return;
+                    }
+    
+                    // 【关键点 B】变量名必须和前面定义的一致
+                    const statusDisplay = document.getElementById('statusText');
+                    statusDisplay.innerText = "✅ 上传成功！ID: " + taskId;
+                    
+                    // 启动轮询
+                    pollResults(taskId);
+                } else {
+                    statusText.innerText = "❌ 上传失败，状态码: " + xhr.status;
+                }
+            };
+            
+            console.log("即将请求的地址:", `${API_BASE}/upload`);
+            xhr.open("POST", `${API_BASE}/upload`, true);
+            xhr.send(formData);
+        }
+    
+        function pollResults(taskId) {
+            const statusText = document.getElementById('statusText');
+            console.log("2. 开始轮询任务结果:", taskId);
+    
+            const timer = setInterval(async () => {
+                try {
+                    const response = await fetch(`${API_BASE}/get_report/${taskId}`);
+                    const result = await response.json();
+                    console.log("3. 轮询状态:", result.status);
+    
+                    if (result.status === "completed") {
+                        clearInterval(timer);
+                        statusText.innerText = "🎉 分析完成！正在渲染表格...";
+                        displayTable(result);
+                    } else if (result.status === "error") {
+                        clearInterval(timer);
+                        statusText.innerText = "❌ 错误: " + result.message;
+                    } else {
+                        statusText.innerText = "⏳ 正在分析中 (Pyshark 正在解析数据包)...";
+                    }
+                } catch (e) {
+                    console.error("轮询请求失败:", e);
+                }
+            }, 2000);
+        }
+    
+        function displayTable(result) {
+            console.log("4. 准备渲染数据:", result.table_data);
+            document.getElementById('report-section').style.display = 'block';
+            document.getElementById('total-pkts').innerText = result.total;
+            
+            const tbody = document.getElementById('table-body');
+            
+            // 确保 table_data 有内容
+            if (!result.table_data || result.table_data.length === 0) {
+                tbody.innerHTML = "<tr><td colspan='4'>未发现有效 IP 数据包</td></tr>";
+                return;
+            }
+    
+            tbody.innerHTML = result.table_data.map(row => `
+                <tr>
+                    <td>${row.source}</td>
+                    <td>${row.destination}</td>
+                    <td>${row.count}</td>
+                    <td>${row.percentage}</td>
+                </tr>
+            `).join('');
+        }
+    </script>
+</body>
+</html>
