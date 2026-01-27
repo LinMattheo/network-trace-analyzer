@@ -18,38 +18,28 @@ jobs:
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
-            cd /home/ubuntu/code
-            
-            # 1. 强制同步代码
+            # 1. 先进入仓库根目录更新代码
+            cd /home/ubuntu/code || exit 1
             git fetch --all
             git reset --hard origin/main
             
-            # 2. 核心补丁：确保 EC2 安装了创建虚拟环境所需的系统包
-            # 我们用 sudo 运行一次，保证环境可用
-            sudo apt-get update
-            sudo apt-get install -y python3-venv python3-pip
+            # 2. 进入 backend 目录处理运行环境
+            cd backend || exit 1
             
-            # 3. 创建虚拟环境 (如果不存在)
-            cd /home/ubuntu/code/backend
+            # 3. 确保 backend 内部的 venv 正常
             if [ ! -d "venv" ]; then
                 python3 -m venv venv
             fi
             
-            # 4. 重点：直接使用虚拟环境路径下的 pip，完全绕过系统 pip
-            ./venv/bin/pip install --upgrade pip
+            # 4. 安装依赖
             ./venv/bin/pip install -r requirements.txt
             
             # 5. 重启服务
             echo "Restarting Uvicorn..."
-            # 使用 || true 防止因为找不到旧进程而报错导致脚本中断
             pkill -f uvicorn || true
             
-            # 关键改动：使用 sleep 确保进程有时间启动，并明确返回成功状态
-            nohup /home/ubuntu/code/venv/bin/python3 -m uvicorn app:app --host 0.0.0.0 --port 8000 > server.log 2>&1 &
+            # 使用 nohup 启动，日志记录在 backend/log.txt
+            nohup ./venv/bin/python3 -m uvicorn app:app --host 0.0.0.0 --port 8000 > log.txt 2>&1 &
             
             sleep 2
-            echo "Checking if process started..."
-            ps aux | grep uvicorn
-            
-            echo "Deploy success!"
-            exit 0
+            echo "Deployment finished! Process is running in background."
