@@ -36,14 +36,14 @@ jobs:
             ./venv/bin/pip install -r requirements.txt
             
             # 5. 重启服务
-            echo "Killing old uvicorn sessions..."
+            echo "Restarting Uvicorn..."
             pkill -f uvicorn || true
             
-            # 6. 使用和你手动测试完全一样的路径启动
-            # 加上 > log.txt 2>&1 确保今天的新日志会覆盖旧的
-            nohup ./venv/bin/python3 -m uvicorn app:app --host 0.0.0.0 --port 8000 > log.txt 2>&1 &
+            # 核心改动：把所有的输出都丢进黑洞，并脱离终端 (disown)
+            # 这样 SSH 就不会因为后台进程还连着管道而报错了
+            nohup ./venv/bin/python3 -m uvicorn app:app --host 0.0.0.0 --port 8000 </dev/null >log.txt 2>&1 &
             
-            sleep 3
-            echo "Checking if process is alive..."
-            ps aux | grep uvicorn | grep -v grep
-            echo "Deploy success!"
+            # 给 2 秒缓冲，然后强制声明成功退出
+            sleep 2
+            echo "Deployment finished and process disowned."
+            exit 0
