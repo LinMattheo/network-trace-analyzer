@@ -18,33 +18,16 @@ jobs:
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
-            # 1. 进入仓库根目录更新代码
-            cd /home/ubuntu/code || exit 1
+            cd /home/ubuntu/code/backend || exit 1
             git fetch --all
             git reset --hard origin/main
             
-            # 2. 进入 backend 目录（手动成功的那个位置）
-            cd backend || exit 1
-            
-            # 3. 彻底清理掉外面那个错的 venv (防止干扰)
-            rm -rf ../venv
-            
-            # 4. 确保当前 backend 目录下的 venv 是最新的
-            if [ ! -d "venv" ]; then
-                python3 -m venv venv
-            fi
+            # 安装依赖
             ./venv/bin/pip install -r requirements.txt
             
-            # 5. 重启服务
-            echo "Restarting Uvicorn..."
-            pkill -f uvicorn || true
-            sleep 1
+            # 使用生产环境标准命令重启
+            echo "Requesting systemd to restart FastAPI..."
+            sudo systemctl restart fastapi
             
-            # 使用 setsid 确保进程不随 SSH 会话关闭而自杀
-            # </dev/null 确保它不再尝试读取已关闭的终端输入
-            setsid ./venv/bin/python3 -m uvicorn app:app --host 0.0.0.0 --port 8000 > log.txt 2>&1 &
-            
-            echo "Process detached successfully."
-            sleep 2
-            # 这一步是为了在 GitHub 日志里确认进程真的还在
-            pgrep -fl uvicorn || echo "Warning: Process not found!"
+            # 检查状态
+            sudo systemctl is-active fastapi
