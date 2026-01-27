@@ -1,0 +1,32 @@
+name: Deploy to AWS EC2
+
+on:
+  push:
+    branches: [ main ]  # 确认你的分支名是 main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            cd /home/ubuntu/code
+            # 强制同步 GitHub 最新代码到 EC2
+            git fetch --all
+            git reset --hard origin/main
+            
+            # 激活环境并更新
+            source venv/bin/activate
+            pip install -r requirements.txt
+            
+            # 重启 FastAPI 服务
+            pkill -f uvicorn || true
+            nohup venv/bin/python3 -m uvicorn app:app --host 0.0.0.0 --port 8000 > server.log 2>&1 &
